@@ -25,12 +25,26 @@ app.use(express.static(__dirname + '/public'));
 
 app.get('/', 
 function(req, res) {
+  //check if user is logged in
+  //if they are not logged in, redirect to /login page
+
+  //if they are logged in, render index page 
   res.render('index');
 });
 
 app.get('/create', 
 function(req, res) {
   res.render('index');
+});
+
+app.get('/login', 
+function(req, res) {
+  res.render('login');
+});
+
+app.get('/signup', 
+function(req, res) {
+  res.render('signup');
 });
 
 app.get('/links', 
@@ -76,6 +90,31 @@ function(req, res) {
 // Write your authentication routes here
 /************************************************************/
 
+app.post('/login', function(req, res) {
+  //check if user is in database
+  var username = req.body.username;
+  var password = req.body.password;
+  console.log('we are in post/login ', req.body);
+
+  //if user is in database, authenticate their password
+  //if user is not in database, redirect user to sign up page.
+  new User({ username: username }).fetch().then(function(found) {
+    if (found) {
+      console.log('username already in database');
+      return res.sendStatus(200);
+    } else {
+      Users.create({
+        username: username,
+        password: password
+      }).then(function(newUser) {
+        console.log('new user created: ', newUser);
+        res.redirect('index');
+        // newUser.set('password', 'changethisplease');
+      });
+    }
+  });
+
+});
 
 
 /************************************************************/
