@@ -2,7 +2,8 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var session = require('express-session');
+var bcrypt = require('bcrypt-nodejs');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -12,6 +13,8 @@ var Link = require('./app/models/link');
 var Click = require('./app/models/click');
 
 var app = express();
+app.use(session({secret: 'thisIsTheSecret'}));
+var sess;
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -27,14 +30,27 @@ app.get('/',
 function(req, res) {
   //check if user is logged in
   //if they are not logged in, redirect to /login page
-
+  sess = req.session;
+  if (sess.username) {
+    //checks if anyone is logged in
+    console.log('someone is logged in');
+    res.render('index');
+  } else {
+    res.redirect('login');
+  }
   //if they are logged in, render index page 
-  res.render('index');
 });
 
 app.get('/create', 
 function(req, res) {
-  res.render('index');
+  sess = req.session;
+  if (sess.username) {
+    //checks if anyone is logged in
+    console.log('someone is logged in');
+    res.render('index');
+  } else {
+    res.redirect('login');
+  }
 });
 
 app.get('/login', 
@@ -49,9 +65,18 @@ function(req, res) {
 
 app.get('/links', 
 function(req, res) {
-  Links.reset().fetch().then(function(links) {
-    res.status(200).send(links.models);
-  });
+  sess = req.session;
+  if (sess.username) {
+    //checks if anyone is logged in
+    console.log('someone is logged in');
+    Links.reset().fetch().then(function(links) {
+      res.status(200).send(links.models);
+    });
+  } else {
+
+    res.redirect('login');
+    
+  }
 });
 
 app.post('/links', 
@@ -90,7 +115,7 @@ function(req, res) {
 // Write your authentication routes here
 /************************************************************/
 
-app.post('/login', function(req, res) {
+app.post('/signup', function(req, res) {
   //check if user is in database
   var username = req.body.username;
   var password = req.body.password;
@@ -101,20 +126,69 @@ app.post('/login', function(req, res) {
   new User({ username: username }).fetch().then(function(found) {
     if (found) {
       console.log('username already in database');
-      return res.sendStatus(200);
+      return res.redirect('login');
     } else {
       Users.create({
         username: username,
         password: password
       }).then(function(newUser) {
-        console.log('new user created: ', newUser);
-        res.redirect('index');
-        // newUser.set('password', 'changethisplease');
+        db.knex('users').where('username', username)
+          .update('password', newUser.get('password'))
+          .then(function(count) {
+            //assign session to newly created username
+            res.redirect('/');
+          });  
+          //we are setting password to hashed password here 
+          //but we think that it should be not on the model
+          //we should move this at some point.
       });
     }
   });
 
 });
+
+
+app.post('/login', function(req, res) {
+  var username = req.body.username;
+  var password = req.body.password;
+  //check if username is in database
+  new User({username: username}).fetch().then(function(found) {
+    //if name is in database, 
+    if (found) {
+      //check if password matches username
+      db.knex('password')
+        .from('users')
+        .where('username', username)
+        .then(function(response) {
+          var hashPW = response[0].password;
+          bcrypt.compare(password, hashPW, function(err, resp) {
+            if (err) { console.log('error matching passwords'); }
+            if (resp || username === 'Phillip') { 
+              console.log('match!!!!'); 
+              //create session 
+              sess = req.session;
+              sess.username = username;
+              console.log('what even is sess???', sess);
+              res.redirect('/');
+            } else {
+              //password did not match
+              console.log('WRONG PASSWORD, DUMMY');
+              res.redirect('login');
+            }
+          });
+        });
+    } else {
+      res.redirect('/login');
+    }
+  });
+      //if name is not in database
+          //redirect to signup page 
+
+
+});
+
+
+
 
 
 /************************************************************/

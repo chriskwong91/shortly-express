@@ -9,7 +9,7 @@ var User = db.Model.extend({
     this.on('creating', function(model, attrs, options) {
       var username = model.get('username');
       var userPassword = model.get('password');
-      console.log('creating hash with password: ', userPassword);
+      // console.log('creating hash with password: ', userPassword);
 
       //bcrypt requires a callback as third argument, this progress
       //function is just a placeholder
@@ -24,11 +24,7 @@ var User = db.Model.extend({
             throw error;
           }
           
-          db.knex('users').where('username', '=', username)
-            .update({password: hash});  
-          // console.log('created hash password: ', hash);
-          // // model.set({password: hash});
-          // console.log('Password after hash: ', model.get('password'));
+          model.set({password: hash});
         });
       });
     });
