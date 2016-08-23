@@ -8,6 +8,8 @@ var bcrypt = require('bcrypt-nodejs');
 var db = require('./app/config');
 var Users = require('./app/collections/users');
 var User = require('./app/models/user');
+var userUrl = require('./app/models/userUrl');
+var UserUrls = require('./app/collections/userUrls');
 var Links = require('./app/collections/links');
 var Link = require('./app/models/link');
 var Click = require('./app/models/click');
@@ -28,29 +30,16 @@ app.use(express.static(__dirname + '/public'));
 
 app.get('/', 
 function(req, res) {
-  //check if user is logged in
-  //if they are not logged in, redirect to /login page
-  sess = req.session;
-  if (sess.username) {
-    //checks if anyone is logged in
-    console.log('someone is logged in');
+  util.checkUser(req, res, function() {
     res.render('index');
-  } else {
-    res.redirect('login');
-  }
-  //if they are logged in, render index page 
+  });
 });
 
 app.get('/create', 
 function(req, res) {
-  sess = req.session;
-  if (sess.username) {
-    //checks if anyone is logged in
-    console.log('someone is logged in');
+  util.checkUser(req, res, function() {
     res.render('index');
-  } else {
-    res.redirect('login');
-  }
+  });
 });
 
 app.get('/login', 
@@ -63,20 +52,22 @@ function(req, res) {
   res.render('signup');
 });
 
+app.get('/logOut', 
+function(req, res) {
+  console.log('Logging Out!');
+  console.log('Session: ', req.session);
+  req.session.username = undefined;
+  res.render('logOut');
+});
+
 app.get('/links', 
 function(req, res) {
-  sess = req.session;
-  if (sess.username) {
-    //checks if anyone is logged in
-    console.log('someone is logged in');
+  util.checkUser(req, res, function() {
     Links.reset().fetch().then(function(links) {
+      
       res.status(200).send(links.models);
     });
-  } else {
-
-    res.redirect('login');
-    
-  }
+  });
 });
 
 app.post('/links', 
@@ -90,6 +81,7 @@ function(req, res) {
 
   new Link({ url: uri }).fetch().then(function(found) {
     if (found) {
+      //check if user is associated with link
       res.status(200).send(found.attributes);
     } else {
       util.getUrlTitle(uri, function(err, title) {
@@ -97,14 +89,27 @@ function(req, res) {
           console.log('Error reading URL heading: ', err);
           return res.sendStatus(404);
         }
-
         Links.create({
           url: uri,
           title: title,
           baseUrl: req.headers.origin
         })
         .then(function(newLink) {
-          res.status(200).send(newLink);
+          new userUrl({urlId: newLink.get('id')}).fetch().then(function() {
+            db.knex('userId').from('users')
+              .where('username', req.session.username)
+              .then(function(response) {
+                var userId = response[0].id;
+                console.log('this is a response to getting userId: ', response);
+                UserUrls.create({
+                  userId: userId,
+                  urlId: newLink.get('id')
+                }).then(function () {
+                  res.status(200).send(newLink);
+                  
+                });
+              });
+          });
         });
       });
     }
@@ -181,10 +186,6 @@ app.post('/login', function(req, res) {
       res.redirect('/login');
     }
   });
-      //if name is not in database
-          //redirect to signup page 
-
-
 });
 
 
