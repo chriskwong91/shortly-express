@@ -4,6 +4,7 @@ var partials = require('express-partials');
 var bodyParser = require('body-parser');
 var session = require('express-session');
 var bcrypt = require('bcrypt-nodejs');
+var _ = require('lodash-node');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -26,6 +27,7 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+
 
 
 app.get('/', 
@@ -63,16 +65,42 @@ function(req, res) {
 app.get('/links', 
 function(req, res) {
   util.checkUser(req, res, function() {
-    Links.reset().fetch().then(function(links) {
-      
-      res.status(200).send(links.models);
-    });
+    console.log('userID in links get: ', app.get('userId'));
+    UserUrls.reset()
+            .fetch().then(function(resppp) {
+              console.log('What is in UserUrls: ', resppp);
+            });
+
+
+    UserUrls.reset().query().where({userId: app.get('userId')})
+            .pluck('urlId').then(function(resp) {
+              console.log('urlId response: ', resp);
+
+              Links.reset().fetch().then(function(links) {
+                var filteredLinks = _.filter(links.models, function(model) {
+                  return _.includes(resp, model.id);
+                });
+                // console.log('links: ', links);
+                // console.log('filtered:', filteredLinks);
+                res.status(200).send(filteredLinks);
+              });
+            });
+
+    // Links.reset().query();
+
+    // // console.log('Links before reset: ', Links);
+    // Links.reset().fetch().then(function(links) {
+    //   // console.log('Links after reset: ', Links);
+    //   console.log('Links.model: ', links.model);
+    // });
   });
 });
 
 app.post('/links', 
 function(req, res) {
   var uri = req.body.url;
+  var urlId;
+  var link;
 
   if (!util.isValidUrl(uri)) {
     console.log('Not a valid url: ', uri);
@@ -81,8 +109,19 @@ function(req, res) {
 
   new Link({ url: uri }).fetch().then(function(found) {
     if (found) {
-      //check if user is associated with link
-      res.status(200).send(found.attributes);
+      console.log('found is object?: ', found);
+      urlId = found.id;
+      link = found;
+      new userUrl({urlId: link.get('id')}).fetch().then(function() {
+        UserUrls.create({
+          userId: app.get('userId'),
+          urlId: urlId
+        }).then(function () {
+          res.status(200).send(link.attributes); 
+        });
+      });
+
+      // res.status(200).send(found.attributes);
     } else {
       util.getUrlTitle(uri, function(err, title) {
         if (err) {
@@ -95,20 +134,15 @@ function(req, res) {
           baseUrl: req.headers.origin
         })
         .then(function(newLink) {
-          new userUrl({urlId: newLink.get('id')}).fetch().then(function() {
-            db.knex('userId').from('users')
-              .where('username', req.session.username)
-              .then(function(response) {
-                var userId = response[0].id;
-                console.log('this is a response to getting userId: ', response);
-                UserUrls.create({
-                  userId: userId,
-                  urlId: newLink.get('id')
-                }).then(function () {
-                  res.status(200).send(newLink);
-                  
-                });
-              });
+          urlId = newLink.get('id');
+          link = newLink;
+          new userUrl({urlId: link.get('id')}).fetch().then(function() {
+            UserUrls.create({
+              userId: app.get('userId'),
+              urlId: urlId
+            }).then(function () {
+              res.status(200).send(link.attributes); 
+            });
           });
         });
       });
@@ -169,11 +203,14 @@ app.post('/login', function(req, res) {
           bcrypt.compare(password, hashPW, function(err, resp) {
             if (err) { console.log('error matching passwords'); }
             if (resp || username === 'Phillip') { 
-              console.log('match!!!!'); 
               //create session 
               sess = req.session;
               sess.username = username;
-              console.log('what even is sess???', sess);
+              db.knex('userId').from('users')
+                .where('username', sess.username)
+                .then(function(response) {
+                  app.set('userId', response[0].id);
+                });
               res.redirect('/');
             } else {
               //password did not match
